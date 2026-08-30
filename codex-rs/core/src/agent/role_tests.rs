@@ -777,7 +777,10 @@ model_provider = "nebius-chat"
         Some("https://api.tokenfactory.nebius.com/v1"),
         config.model_provider.base_url.as_deref()
     );
-    assert_eq!(Some("nvidia/nemotron-3-nano-30b-a3b"), config.model.as_deref());
+    assert_eq!(
+        Some("nvidia/nemotron-3-nano-30b-a3b"),
+        config.model.as_deref()
+    );
 }
 
 #[tokio::test]

@@ -679,7 +679,12 @@ pub struct AgentsToml {
     #[serde(alias = "max_threads")]
     #[schemars(range(min = 1))]
     pub max_concurrent_threads_per_session: Option<usize>,
-    /// Maximum nesting depth for V1 agent threads. Ignored by V2.
+    /// How many levels of agents may spawn further agents.
+    ///
+    /// `1` (the default) means only the agent you talk to spawns: it manages a
+    /// flat pool of workers. `2` lets it spawn team leads that run teams of
+    /// their own, and so on. Raising this is what turns a pool of subagents
+    /// into an org chart.
     pub max_depth: Option<i32>,
     /// Model providers a role is allowed to route a spawned agent to.
     ///

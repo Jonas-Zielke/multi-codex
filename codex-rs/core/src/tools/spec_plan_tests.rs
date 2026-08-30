@@ -3341,3 +3341,62 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
     bedrock_with_standalone_web_search.assert_visible_contains(&["web_search"]);
     bedrock_with_standalone_web_search.assert_visible_lacks(&["web"]);
 }
+
+/// Builds a turn that looks like a spawned team member at `depth`.
+fn make_spawned_team_member(turn: &mut TurnContext, depth: i32) {
+    turn.session_source = codex_protocol::protocol::SessionSource::SubAgent(
+        codex_protocol::protocol::SubAgentSource::ThreadSpawn {
+            parent_thread_id: codex_protocol::ThreadId::new(),
+            depth,
+            agent_path: Some(
+                codex_protocol::AgentPath::root()
+                    .join("frontend")
+                    .expect("agent path segment should be valid"),
+            ),
+            agent_nickname: None,
+            agent_role: Some("lead".to_string()),
+        },
+    );
+}
+
+#[tokio::test]
+async fn spawned_agents_manage_children_only_within_the_configured_depth() {
+    let flat = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+        make_spawned_team_member(turn, /*depth*/ 1);
+    })
+    .await;
+    // The default depth of 1 keeps the tree flat: a spawned agent does the work
+    // rather than delegating it again.
+    assert!(!flat.can_manage_children);
+    flat.assert_visible_lacks(&[MULTI_AGENT_V2_NAMESPACE]);
+
+    let lead = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+        update_config(turn, |config| config.agent_max_depth = 2);
+        make_spawned_team_member(turn, /*depth*/ 1);
+    })
+    .await;
+    assert!(lead.can_manage_children);
+    lead.assert_visible_contains(&[MULTI_AGENT_V2_NAMESPACE]);
+
+    // Its own workers are still leaves, so the org chart stops where told.
+    let worker = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+        update_config(turn, |config| config.agent_max_depth = 2);
+        make_spawned_team_member(turn, /*depth*/ 2);
+    })
+    .await;
+    assert!(!worker.can_manage_children);
+}
+
+#[tokio::test]
+async fn the_root_agent_manages_children_regardless_of_depth() {
+    let root = probe(|turn| {
+        set_feature(turn, Feature::MultiAgentV2, /*enabled*/ true);
+        update_config(turn, |config| config.agent_max_depth = 0);
+    })
+    .await;
+
+    assert!(root.can_manage_children);
+}

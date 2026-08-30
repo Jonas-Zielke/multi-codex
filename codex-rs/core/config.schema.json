@@ -70,7 +70,7 @@
           "type": "integer"
         },
         "max_depth": {
-          "description": "Maximum nesting depth for V1 agent threads. Ignored by V2.",
+          "description": "How many levels of agents may spawn further agents.\n\n`1` (the default) means only the agent you talk to spawns: it manages a flat pool of workers. `2` lets it spawn team leads that run teams of their own, and so on. Raising this is what turns a pool of subagents into an org chart.",
           "format": "int32",
           "type": "integer"
         }

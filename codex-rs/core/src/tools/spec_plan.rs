@@ -657,15 +657,21 @@ fn multi_agent_v2_enabled(turn_context: &TurnContext) -> bool {
 }
 
 fn collab_tools_enabled(turn_context: &TurnContext, model_info: &ModelInfo) -> bool {
+    let within_configured_depth = !exceeds_thread_spawn_depth_limit(
+        next_thread_spawn_depth(&turn_context.session_source),
+        turn_context.config.agent_max_depth,
+    );
     match turn_context.multi_agent_version {
         MultiAgentVersion::Disabled => false,
-        MultiAgentVersion::V1 => !exceeds_thread_spawn_depth_limit(
-            next_thread_spawn_depth(&turn_context.session_source),
-            turn_context.config.agent_max_depth,
-        ),
+        MultiAgentVersion::V1 => within_configured_depth,
+        // The agent talking to the user always manages children, and a model
+        // that declares V2 support brings its own. `agents.max_depth` grants
+        // the same to agents further down, which is what lets a team lead run
+        // a team instead of doing the work itself.
         MultiAgentVersion::V2 => {
             turn_context.session_source.get_agent_path().is_none()
                 || model_info.multi_agent_version == Some(MultiAgentVersion::V2)
+                || within_configured_depth
         }
     }
 }
