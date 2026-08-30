@@ -50,6 +50,7 @@ mod cloud_config;
 mod desktop_app;
 mod doctor;
 mod exec_server_telemetry;
+mod fleet;
 mod marketplace_cmd;
 mod mcp_cmd;
 mod migrate_rollouts;
@@ -136,6 +137,9 @@ enum Subcommand {
     /// Run Codex non-interactively.
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
+
+    /// Configure the inference endpoints agents run on.
+    Fleet(fleet::FleetCommand),
 
     /// Run a code review non-interactively.
     Review(ReviewCommand),
@@ -1156,6 +1160,14 @@ async fn cli_main(
                 root_config_overrides.clone(),
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
+        }
+        Some(Subcommand::Fleet(fleet_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "fleet",
+            )?;
+            fleet::run_main(fleet_cli, root_config_overrides.clone()).await?;
         }
         Some(Subcommand::Review(ReviewCommand {
             strict_config,
@@ -2445,6 +2457,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::ResponsesApiProxy(_)) => Some("responses-api-proxy"),
         Some(Subcommand::StdioToUds(_)) => Some("stdio-to-uds"),
         Some(Subcommand::Features(_)) => Some("features"),
+        Some(Subcommand::Fleet(_)) => Some("fleet"),
     }
 }
 
