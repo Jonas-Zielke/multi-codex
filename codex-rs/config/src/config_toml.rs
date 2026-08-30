@@ -681,6 +681,13 @@ pub struct AgentsToml {
     pub max_concurrent_threads_per_session: Option<usize>,
     /// Maximum nesting depth for V1 agent threads. Ignored by V2.
     pub max_depth: Option<i32>,
+    /// Model providers a role is allowed to route a spawned agent to.
+    ///
+    /// Roles cannot introduce endpoints of their own: a role's `model_provider`
+    /// is honored only when its id is listed here, so every destination agent
+    /// traffic can reach stays declared in `config.toml`. Unset means roles run
+    /// on the parent session's provider.
+    pub allowed_model_providers: Option<Vec<String>>,
     /// Default model for spawned subagents when the spawn call does not select one.
     pub default_subagent_model: Option<String>,
     /// Default reasoning effort for spawned subagents when the spawn call does not select one.

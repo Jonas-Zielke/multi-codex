@@ -36,6 +36,13 @@
         "$ref": "#/definitions/AgentRoleToml"
       },
       "properties": {
+        "allowed_model_providers": {
+          "description": "Model providers a role is allowed to route a spawned agent to.\n\nRoles cannot introduce endpoints of their own: a role's `model_provider` is honored only when its id is listed here, so every destination agent traffic can reach stays declared in `config.toml`. Unset means roles run on the parent session's provider.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "default_subagent_model": {
           "description": "Default model for spawned subagents when the spawn call does not select one.",
           "type": "string"
@@ -422,6 +429,24 @@
       "properties": {
         "enabled": {
           "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ChatCompletionsOptions": {
+      "additionalProperties": false,
+      "description": "Provider-specific knobs for the Chat Completions wire protocol.\n\nOpenAI-compatible servers disagree about which optional request fields they tolerate, so anything beyond the common core is opt-in per provider. These are surfaced in `config.toml` under `model_providers.<id>.chat`.",
+      "properties": {
+        "extra_body": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Extra top-level fields merged into every request body, for server-specific switches such as vLLM's `chat_template_kwargs`.",
+          "type": "object"
+        },
+        "send_reasoning_effort": {
+          "default": false,
+          "description": "Send `reasoning_effort` when the turn selects one. Off by default: some OpenAI-compatible servers reject request fields they do not recognize.",
           "type": "boolean"
         }
       },
@@ -2150,6 +2175,14 @@
         "base_url": {
           "description": "Base URL for the provider's OpenAI-compatible API.",
           "type": "string"
+        },
+        "chat": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ChatCompletionsOptions"
+            }
+          ],
+          "description": "Request tuning for providers that speak `wire_api = \"chat\"`. Ignored on Responses-API providers."
         },
         "env_http_headers": {
           "additionalProperties": {
@@ -5661,6 +5694,13 @@
           "description": "The Responses API exposed by OpenAI at `/v1/responses`.",
           "enum": [
             "responses"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The OpenAI-compatible Chat Completions API at `/v1/chat/completions`.\n\nThis is the surface exposed by Nebius Token Factory and by every local runtime Codex can drive (vLLM, Ollama, LM Studio, llama.cpp), none of which implement the Responses API. Codex translates its Responses-shaped turn into chat messages on the way out and back into response items on the way in; see `codex_api::requests::chat_completions`.",
+          "enum": [
+            "chat"
           ],
           "type": "string"
         }

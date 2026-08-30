@@ -164,6 +164,10 @@ model_reasoning_effort = "minimal"
             nickname_candidates: None,
         },
     );
+    // Authorize the role's provider switch; without this the role is rejected.
+    config
+        .agent_allowed_model_providers
+        .insert("ollama".to_string());
     turn.config = Arc::new(config);
 
     role_name
@@ -791,6 +795,10 @@ async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
     turn.config = Arc::new(config);
     turn.multi_agent_version = codex_protocol::protocol::MultiAgentVersion::V2;
     let parent_provider_id = turn.config.model_provider_id.clone();
+    assert_ne!(
+        "ollama", parent_provider_id,
+        "the role has to move the child off the parent's provider for this to prove anything"
+    );
 
     let output = SpawnAgentHandlerV2::default()
         .handle(invocation(
@@ -824,7 +832,9 @@ async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
         .await;
 
     assert_eq!(snapshot.model, "gpt-5-role-override");
-    assert_eq!(snapshot.model_provider_id, parent_provider_id);
+    // The role routes the child onto its own endpoint, which the session has
+    // authorized through `agents.allowed_model_providers`.
+    assert_eq!(snapshot.model_provider_id, "ollama");
     assert_eq!(snapshot.reasoning_effort, Some(ReasoningEffort::Minimal));
 }
 

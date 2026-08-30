@@ -135,6 +135,7 @@ use rmcp::model::UrlElicitationCapability;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -870,6 +871,11 @@ pub struct Config {
 
     /// User-configured maximum number of spawned agent threads per session.
     pub agent_max_threads: Option<usize>,
+
+    /// Model provider ids a role may route a spawned agent to.
+    ///
+    /// Empty means roles always run on the parent session's provider.
+    pub agent_allowed_model_providers: BTreeSet<String>,
 
     /// Default model for spawned subagents when the spawn call does not select one.
     pub agent_default_subagent_model: Option<String>,
@@ -3787,6 +3793,13 @@ impl Config {
             .as_ref()
             .and_then(|agents| agents.max_depth)
             .unwrap_or(DEFAULT_AGENT_MAX_DEPTH);
+        let agent_allowed_model_providers = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.allowed_model_providers.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<BTreeSet<_>>();
         let agent_default_subagent_model = cfg
             .agents
             .as_ref()
@@ -4205,6 +4218,7 @@ impl Config {
             tool_output_token_limit: cfg.tool_output_token_limit,
             agents_enabled,
             agent_max_threads,
+            agent_allowed_model_providers,
             agent_default_subagent_model,
             agent_default_subagent_reasoning_effort,
             agent_max_depth,
