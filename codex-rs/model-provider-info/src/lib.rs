@@ -5,6 +5,7 @@
 //!   2. User-defined entries inside `~/.codex/config.toml` under the `model_providers`
 //!      key. These override or extend the defaults at runtime.
 
+use codex_api::ChatCompletionsOptions;
 use codex_api::Provider as ApiProvider;
 use codex_api::RetryConfig as ApiRetryConfig;
 use codex_protocol::auth::AuthMode;
@@ -54,7 +55,16 @@ pub const AMAZON_BEDROCK_DEFAULT_BASE_URL: &str =
     "https://bedrock-mantle.us-east-1.api.aws/openai/v1";
 const AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER: &str = "x-amzn-mantle-client-agent";
 const AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE: &str = "codex";
-const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
+pub const NEBIUS_PROVIDER_NAME: &str = "Nebius Token Factory";
+/// Nebius Token Factory over the Responses API, which its Nemotron endpoints
+/// expose alongside chat completions.
+pub const NEBIUS_PROVIDER_ID: &str = "nebius";
+/// Same endpoint over chat completions, for models that do not offer Responses.
+pub const NEBIUS_CHAT_PROVIDER_ID: &str = "nebius-chat";
+pub const NEBIUS_DEFAULT_BASE_URL: &str = "https://api.tokenfactory.nebius.com/v1";
+pub const NEBIUS_ENV_KEY: &str = "NEBIUS_API_KEY";
+const NEBIUS_ENV_KEY_INSTRUCTIONS: &str =
+    "Create an API key at https://tokenfactory.nebius.com and export it as NEBIUS_API_KEY.";
 pub const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
 
@@ -65,12 +75,21 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// The OpenAI-compatible Chat Completions API at `/v1/chat/completions`.
+    ///
+    /// This is the surface exposed by Nebius Token Factory and by every local
+    /// runtime Codex can drive (vLLM, Ollama, LM Studio, llama.cpp), none of
+    /// which implement the Responses API. Codex translates its Responses-shaped
+    /// turn into chat messages on the way out and back into response items on
+    /// the way in; see `codex_api::requests::chat_completions`.
+    Chat,
 }
 
 impl fmt::Display for WireApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Responses => "responses",
+            Self::Chat => "chat",
         };
         f.write_str(value)
     }
@@ -84,8 +103,11 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
-            "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            "chat" => Ok(Self::Chat),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["responses", "chat"],
+            )),
         }
     }
 }
@@ -116,6 +138,9 @@ pub struct ModelProviderInfo {
     /// Which wire protocol this provider expects.
     #[serde(default)]
     pub wire_api: WireApi,
+    /// Request tuning for providers that speak `wire_api = "chat"`. Ignored on
+    /// Responses-API providers.
+    pub chat: Option<ChatCompletionsOptions>,
     /// Optional query parameters to append to the base URL.
     pub query_params: Option<HashMap<String, RedactedString>>,
     /// Additional HTTP headers to include in requests to this provider where
@@ -392,6 +417,7 @@ impl ModelProviderInfo {
             auth: None,
             aws: None,
             wire_api: WireApi::Responses,
+            chat: None,
             query_params: None,
             http_headers: Some(
                 [("version".to_string(), env!("CARGO_PKG_VERSION").into())]
@@ -420,6 +446,35 @@ impl ModelProviderInfo {
         }
     }
 
+    /// Builds the Nebius Token Factory provider.
+    ///
+    /// Nebius serves NVIDIA's open Nemotron models on an endpoint that speaks
+    /// both the Responses API and chat completions, and availability differs
+    /// per model, so the wire protocol is chosen by the caller.
+    pub fn create_nebius_provider(wire_api: WireApi) -> ModelProviderInfo {
+        ModelProviderInfo {
+            name: NEBIUS_PROVIDER_NAME.into(),
+            base_url: Some(NEBIUS_DEFAULT_BASE_URL.into()),
+            env_key: Some(NEBIUS_ENV_KEY.into()),
+            env_key_instructions: Some(NEBIUS_ENV_KEY_INSTRUCTIONS.into()),
+            experimental_bearer_token: None,
+            auth: None,
+            aws: None,
+            wire_api,
+            chat: None,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            websocket_connect_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+            supports_standalone_web_search: false,
+        }
+    }
+
     pub fn create_amazon_bedrock_provider(
         aws: Option<ModelProviderAwsAuthInfo>,
     ) -> ModelProviderInfo {
@@ -439,6 +494,7 @@ impl ModelProviderInfo {
                 auth_refresh: None,
             })),
             wire_api: WireApi::Responses,
+            chat: None,
             query_params: None,
             http_headers: Some(HashMap::from([(
                 AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER.to_string(),
@@ -523,6 +579,14 @@ pub fn built_in_model_providers(
     // `model_providers` in config.toml to add their own providers.
     [
         (OPENAI_PROVIDER_ID, openai_provider),
+        (
+            NEBIUS_PROVIDER_ID,
+            P::create_nebius_provider(WireApi::Responses),
+        ),
+        (
+            NEBIUS_CHAT_PROVIDER_ID,
+            P::create_nebius_provider(WireApi::Chat),
+        ),
         (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),
         (
             AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,
@@ -552,7 +616,44 @@ pub fn merge_configured_model_providers(
     configured_model_providers: HashMap<String, ModelProviderInfo>,
 ) -> Result<HashMap<String, ModelProviderInfo>, String> {
     for (key, mut provider) in configured_model_providers {
-        if matches!(
+        if matches!(key.as_str(), NEBIUS_PROVIDER_ID | NEBIUS_CHAT_PROVIDER_ID) {
+            // Nebius serves the same catalog from a shared endpoint and from
+            // regional ones, so the endpoint and its credentials stay editable
+            // while the wire protocol each id implies does not.
+            let base_url_override = provider.base_url.take();
+            let env_key_override = provider.env_key.take();
+            let http_headers_override = provider.http_headers.take();
+            let chat_override = provider.chat.take();
+            let expected = ModelProviderInfo {
+                wire_api: provider.wire_api,
+                ..Default::default()
+            };
+            if provider != expected {
+                return Err(format!(
+                    "model_providers.{key} only supports changing \
+`base_url`, `env_key`, `http_headers`, and `chat`; \
+other non-default provider fields are not supported"
+                ));
+            }
+
+            if let Some(built_in_provider) = model_providers.get_mut(&key) {
+                if let Some(base_url_override) = base_url_override {
+                    built_in_provider.base_url = Some(base_url_override);
+                }
+                if let Some(env_key_override) = env_key_override {
+                    built_in_provider.env_key = Some(env_key_override);
+                }
+                if let Some(http_headers_override) = http_headers_override {
+                    built_in_provider
+                        .http_headers
+                        .get_or_insert_default()
+                        .extend(http_headers_override);
+                }
+                if let Some(chat_override) = chat_override {
+                    built_in_provider.chat = Some(chat_override);
+                }
+            }
+        } else if matches!(
             key.as_str(),
             AMAZON_BEDROCK_PROVIDER_ID | AMAZON_BEDROCK_RUNTIME_PROVIDER_ID
         ) {
@@ -618,6 +719,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         auth: None,
         aws: None,
         wire_api,
+        chat: None,
         query_params: None,
         http_headers: None,
         env_http_headers: None,

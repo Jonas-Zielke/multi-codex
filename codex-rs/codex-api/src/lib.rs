@@ -13,6 +13,7 @@ pub(crate) mod search;
 pub(crate) mod sse;
 pub(crate) mod telemetry;
 
+pub use crate::requests::ChatCompletionsOptions;
 pub use crate::requests::headers::build_session_headers;
 pub use codex_client::RequestTelemetry;
 pub use codex_client::ReqwestTransport;
@@ -49,6 +50,9 @@ pub use crate::common::WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY;
 pub use crate::common::WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY;
 pub use crate::common::create_text_param_for_request;
 pub use crate::common::response_create_client_metadata;
+pub use crate::endpoint::CHAT_COMPLETIONS_PATH;
+pub use crate::endpoint::ChatCompletionsClient;
+pub use crate::endpoint::ChatCompletionsRequestOptions;
 pub use crate::endpoint::CompactClient;
 pub use crate::endpoint::ImagesClient;
 pub use crate::endpoint::MemoriesClient;

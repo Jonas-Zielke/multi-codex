@@ -20,6 +20,7 @@ base_url = "http://localhost:11434/v1"
         auth: None,
         aws: None,
         wire_api: WireApi::Responses,
+        chat: None,
         query_params: None,
         http_headers: None,
         env_http_headers: None,
@@ -53,6 +54,7 @@ query_params = { api-version = "2025-04-01-preview" }
         auth: None,
         aws: None,
         wire_api: WireApi::Responses,
+        chat: None,
         query_params: Some(maplit::hashmap! {
             "api-version".to_string() => "2025-04-01-preview".into(),
         }),
@@ -90,6 +92,7 @@ supports_standalone_web_search = true
         auth: None,
         aws: None,
         wire_api: WireApi::Responses,
+        chat: None,
         query_params: None,
         http_headers: Some(maplit::hashmap! {
             "X-Example-Header".to_string() => "example-value".into(),
@@ -111,16 +114,30 @@ supports_standalone_web_search = true
 }
 
 #[test]
-fn test_deserialize_chat_wire_api_shows_helpful_error() {
+fn test_deserialize_chat_wire_api() {
     let provider_toml = r#"
-name = "OpenAI using Chat Completions"
-base_url = "https://api.openai.com/v1"
-env_key = "OPENAI_API_KEY"
+name = "Nebius Token Factory"
+base_url = "https://api.tokenfactory.nebius.com/v1"
+env_key = "NEBIUS_API_KEY"
 wire_api = "chat"
         "#;
 
+    let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+    assert_eq!(WireApi::Chat, provider.wire_api);
+}
+
+#[test]
+fn test_deserialize_unknown_wire_api_lists_supported_values() {
+    let provider_toml = r#"
+name = "Nonsense"
+base_url = "https://example.com/v1"
+wire_api = "grpc"
+        "#;
+
     let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
-    assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
+    let message = err.to_string();
+    assert!(message.contains("responses"), "{message}");
+    assert!(message.contains("chat"), "{message}");
 }
 
 #[test]
@@ -268,6 +285,7 @@ fn test_create_amazon_bedrock_provider() {
                 auth_refresh: None,
             }),
             wire_api: WireApi::Responses,
+            chat: None,
             query_params: None,
             http_headers: Some(maplit::hashmap! {
                 AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER.to_string() =>
@@ -565,6 +583,7 @@ fn test_merge_configured_model_providers_allows_amazon_bedrock_default_fields() 
                 auth_refresh: None,
             }),
             wire_api: WireApi::Responses,
+            chat: None,
             ..ModelProviderInfo::default()
         },
     )]);

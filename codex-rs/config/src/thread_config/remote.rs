@@ -182,6 +182,9 @@ fn model_provider_from_proto(
             .transpose()?,
         aws: None,
         wire_api,
+        // Remote thread configs are served by the Codex backend, which only
+        // describes Responses-API providers.
+        chat: None,
         query_params: provider.query_params.map(redacted_string_map),
         http_headers: provider.http_headers.map(redacted_string_map),
         env_http_headers: provider.env_http_headers.map(|map| map.values),
@@ -305,6 +308,10 @@ fn proto_string_map(values: HashMap<String, RedactedString>) -> proto::StringMap
 fn proto_wire_api(wire_api: WireApi) -> proto::WireApi {
     match wire_api {
         WireApi::Responses => proto::WireApi::Responses,
+        // The remote thread-config protocol has no chat variant; the backend
+        // never serves chat-completions providers. Round-tripping one fails
+        // loudly on the way back in rather than silently changing the wire.
+        WireApi::Chat => proto::WireApi::Unspecified,
     }
 }
 
