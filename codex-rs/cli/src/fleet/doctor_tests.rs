@@ -5,8 +5,6 @@ use pretty_assertions::assert_eq;
 async fn test_config() -> Config {
     let home = tempfile::tempdir().expect("create temp dir");
     let home_path = home.path().to_path_buf();
-    // Keep the directory alive for the life of the config.
-    std::mem::forget(home);
     codex_core::config::ConfigBuilder::default()
         .codex_home(home_path.clone())
         .fallback_cwd(Some(home_path))
@@ -24,7 +22,7 @@ fn local_provider(base_url: &str) -> ModelProviderInfo {
 }
 
 #[tokio::test]
-async fn an_unauthorized_endpoint_is_reported_as_a_failure() {
+async fn a_declared_but_unauthorized_endpoint_routes_nothing() {
     let mut config = test_config().await;
     config
         .model_providers
