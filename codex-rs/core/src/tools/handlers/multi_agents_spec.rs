@@ -471,9 +471,20 @@ fn list_agents_output_schema() -> Value {
                         "provider": {
                             "type": "string",
                             "description": "Provider id the agent runs against. Agents in one tree can sit on different endpoints."
+                        },
+                        "tokens": {
+                            "type": "object",
+                            "description": "Tokens the agent has spent so far, so a tree's cost can be read per endpoint.",
+                            "properties": {
+                                "input": {"type": "integer"},
+                                "cached_input": {"type": "integer"},
+                                "output": {"type": "integer"}
+                            },
+                            "required": ["input", "cached_input", "output"],
+                            "additionalProperties": false
                         }
                     },
-                    "required": ["agent_name", "agent_status", "model", "provider"],
+                    "required": ["agent_name", "agent_status", "model", "provider", "tokens"],
                     "additionalProperties": false
                 },
                 "description": "Live agents visible in the current root thread tree."

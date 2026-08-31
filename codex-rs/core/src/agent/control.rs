@@ -52,6 +52,7 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
+use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::turn_input::CyberAccessProgram;
 use codex_protocol::user_input::UserInput;
@@ -111,6 +112,30 @@ pub(crate) struct ListedAgent {
     /// Provider id the agent runs against. Agents in one tree can sit on
     /// different endpoints, so this is what says where the work is happening.
     pub(crate) provider: String,
+    /// Tokens the agent has spent so far, so the cost of a tree can be read
+    /// per endpoint rather than as one undifferentiated total.
+    pub(crate) tokens: ListedAgentTokens,
+}
+
+/// Cumulative token spend for one agent.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub(crate) struct ListedAgentTokens {
+    pub(crate) input: i64,
+    pub(crate) cached_input: i64,
+    pub(crate) output: i64,
+}
+
+impl From<Option<TokenUsageInfo>> for ListedAgentTokens {
+    fn from(info: Option<TokenUsageInfo>) -> Self {
+        let Some(info) = info else {
+            return Self::default();
+        };
+        Self {
+            input: info.total_token_usage.input_tokens,
+            cached_input: info.total_token_usage.cached_input_tokens,
+            output: info.total_token_usage.output_tokens,
+        }
+    }
 }
 
 /// Control-plane handle for multi-agent operations.
@@ -544,6 +569,7 @@ impl AgentControl {
                 agent_status: root_thread.agent_status().await,
                 model: snapshot.model,
                 provider: snapshot.model_provider_id,
+                tokens: root_thread.session.token_usage_info().await.into(),
             });
         }
 
@@ -572,6 +598,7 @@ impl AgentControl {
                 agent_status: thread.agent_status().await,
                 model: snapshot.model,
                 provider: snapshot.model_provider_id,
+                tokens: thread.session.token_usage_info().await.into(),
             });
         }
 

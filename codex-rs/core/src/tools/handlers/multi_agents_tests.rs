@@ -215,6 +215,14 @@ struct ListedAgentResult {
     agent_status: serde_json::Value,
     model: String,
     provider: String,
+    tokens: ListedAgentTokensResult,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListedAgentTokensResult {
+    input: i64,
+    cached_input: i64,
+    output: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4561,6 +4569,35 @@ async fn multi_agent_v2_list_agents_reports_where_each_agent_runs() {
         .expect("spawn_agent should succeed");
     let _ = expect_text_output(spawn_output);
 
+    // Spend some tokens on the worker so the split is not trivially zero.
+    let worker_id = session
+        .services
+        .agent_control
+        .resolve_agent_reference(session.thread_id, &turn.session_source, "worker")
+        .await
+        .expect("worker path should resolve");
+    let worker_thread = manager
+        .get_thread(worker_id)
+        .await
+        .expect("worker thread should exist");
+    let worker_turn = worker_thread.session.new_default_turn().await;
+    worker_thread
+        .session
+        .record_token_usage_info(
+            worker_turn.as_ref(),
+            Some(&codex_protocol::protocol::TokenUsage {
+                input_tokens: 900,
+                cached_input_tokens: 100,
+                cache_write_input_tokens: 0,
+                output_tokens: 300,
+                reasoning_output_tokens: 0,
+                total_tokens: 1200,
+                codex_rollout_budget_units: None,
+            }),
+        )
+        .await
+        .expect("recording token usage should succeed");
+
     let output = ListAgentsHandlerV2
         .handle(invocation(
             session,
@@ -4591,4 +4628,11 @@ async fn multi_agent_v2_list_agents_reports_where_each_agent_runs() {
         .find(|agent| agent.agent_name == "/root")
         .expect("root agent should be listed");
     assert_eq!(root_provider_id, root_agent.provider);
+
+    // The spend is attributed to the endpoint the agent actually ran on, which
+    // is what makes "how much of this stayed local" answerable.
+    assert_eq!(900, worker.tokens.input);
+    assert_eq!(100, worker.tokens.cached_input);
+    assert_eq!(300, worker.tokens.output);
+    assert_eq!(0, root_agent.tokens.output);
 }

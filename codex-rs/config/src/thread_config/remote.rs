@@ -213,6 +213,8 @@ fn model_provider_to_proto(
         auth,
         aws: _,
         wire_api,
+        // The remote protocol has no chat-completions tuning to carry.
+        chat: _,
         query_params,
         http_headers,
         env_http_headers,
@@ -559,6 +561,7 @@ mod tests {
                 cwd: workspace_dir(),
             }),
             wire_api: WireApi::Responses,
+            chat: None,
             query_params: Some(HashMap::from([(
                 "api-version".to_string(),
                 "2026-04-16".into(),
