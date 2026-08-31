@@ -27,6 +27,7 @@ use toml_edit::Array;
 use toml_edit::Item as TomlItem;
 use toml_edit::value;
 
+mod doctor;
 mod probe;
 mod team;
 
@@ -49,6 +50,8 @@ enum FleetAction {
     List,
     /// Install the lead and worker roles that make a hierarchy an org.
     Team(team::TeamArgs),
+    /// Check that the configured fleet will actually run.
+    Doctor,
 }
 
 #[derive(Debug, Parser)]
@@ -107,6 +110,14 @@ pub async fn run_main(command: FleetCommand, config_overrides: CliConfigOverride
         FleetAction::Add(args) => run_add(&config, args).await,
         FleetAction::List => run_list(&config).await,
         FleetAction::Team(args) => team::run_team(&config, args).await,
+        FleetAction::Doctor => {
+            // A non-zero exit lets this gate a script or a CI step.
+            if doctor::run_doctor(&config).await? {
+                Ok(())
+            } else {
+                std::process::exit(1);
+            }
+        }
     }
 }
 

@@ -106,6 +106,35 @@ That writes two role files under `~/.codex/agents/`, raises the depth limit so
 leads may spawn their own workers, and enables the V2 agent backend. Edit the
 files freely afterwards — they are yours.
 
+### 4. Check it
+
+```shell
+$ codex fleet doctor
+Session
+  ok    provider `nebius` → https://api.tokenfactory.nebius.com/v1
+  ok    NEBIUS_API_KEY is set
+  ok    serves nvidia/Nemotron-3-Ultra-550b-a55b
+
+Routing
+  ok    `vllm` is authorized for routing
+
+Roles
+  ok    lead inherits the session endpoint
+  ok    worker runs nvidia/nemotron-3-nano-30b-a3b on `vllm`
+
+Teams
+  ok    the multi-agent backend is enabled
+  ok    agents.max_depth = 2 — leads may run teams
+
+The fleet is ready.
+```
+
+A fleet has several ways to be almost right: a key that is not exported, a
+local server that is not up, a role pointing at an endpoint that was never
+authorized. Each of those otherwise surfaces much later, as an agent behaving
+oddly rather than as a configuration error. `doctor` exits non-zero when
+something will not work, so it can gate a script.
+
 Now ask for something big enough to split:
 
 > Add dark mode: one lead for the UI, one for the theme plumbing.

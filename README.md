@@ -60,7 +60,10 @@ codex fleet scan --write
 # 3. Install the lead and worker roles
 codex fleet team --write
 
-# 4. Go
+# 4. Check it before you rely on it
+codex fleet doctor
+
+# 5. Go
 codex -c model_provider=nebius -c model="nvidia/Nemotron-3-Ultra-550b-a55b"
 ```
 
@@ -95,7 +98,8 @@ leads that run teams of their own.
 **`codex fleet`.** Finds inference endpoints by asking each candidate port what
 it is, works out which wire protocol it speaks, and writes the configuration —
 providers, allowlist, roles, depth — so none of the above has to be assembled by
-hand.
+hand. `codex fleet doctor` then checks the result end to end and exits non-zero
+when something will not work.
 
 ## Configuration
 
