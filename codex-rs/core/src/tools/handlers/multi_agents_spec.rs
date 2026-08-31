@@ -463,9 +463,17 @@ fn list_agents_output_schema() -> Value {
                         "agent_status": {
                             "description": "Last known status of the agent.",
                             "allOf": [agent_status_output_schema()]
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": "Model the agent runs."
+                        },
+                        "provider": {
+                            "type": "string",
+                            "description": "Provider id the agent runs against. Agents in one tree can sit on different endpoints."
                         }
                     },
-                    "required": ["agent_name", "agent_status"],
+                    "required": ["agent_name", "agent_status", "model", "provider"],
                     "additionalProperties": false
                 },
                 "description": "Live agents visible in the current root thread tree."

@@ -106,6 +106,11 @@ pub(crate) struct LiveAgent {
 pub(crate) struct ListedAgent {
     pub(crate) agent_name: String,
     pub(crate) agent_status: AgentStatus,
+    /// Model the agent runs, which a role may set independently of its parent.
+    pub(crate) model: String,
+    /// Provider id the agent runs against. Agents in one tree can sit on
+    /// different endpoints, so this is what says where the work is happening.
+    pub(crate) provider: String,
 }
 
 /// Control-plane handle for multi-agent operations.
@@ -533,9 +538,12 @@ impl AgentControl {
             && let Some(root_thread_id) = self.state.agent_id_for_path(&root_path)
             && let Ok(root_thread) = state.get_thread(root_thread_id).await
         {
+            let snapshot = root_thread.config_snapshot().await;
             agents.push(ListedAgent {
                 agent_name: root_path.to_string(),
                 agent_status: root_thread.agent_status().await,
+                model: snapshot.model,
+                provider: snapshot.model_provider_id,
             });
         }
 
@@ -558,9 +566,12 @@ impl AgentControl {
                 .as_ref()
                 .map(ToString::to_string)
                 .unwrap_or_else(|| thread_id.to_string());
+            let snapshot = thread.config_snapshot().await;
             agents.push(ListedAgent {
                 agent_name,
                 agent_status: thread.agent_status().await,
+                model: snapshot.model,
+                provider: snapshot.model_provider_id,
             });
         }
 
