@@ -180,3 +180,33 @@ async fn test_config() -> Config {
         .await
         .expect("load test config")
 }
+
+#[tokio::test]
+async fn a_loopback_alias_still_matches_a_configured_endpoint() {
+    let config = test_config().await;
+    // The built-in oss providers are written with `localhost`, while a scan of
+    // the default host reports `127.0.0.1`.
+    let scanned = config.model_providers[OLLAMA_OSS_PROVIDER_ID]
+        .base_url
+        .clone()
+        .expect("built-in oss provider has a base url")
+        .replace("localhost", "127.0.0.1");
+
+    let assignments = assign_provider_ids(&config, &[endpoint(&scanned, Runtime::Ollama)]);
+
+    assert_eq!(OLLAMA_OSS_PROVIDER_ID, assignments[0].0);
+}
+
+#[test]
+fn loopback_aliases_normalize_to_one_form() {
+    let expected = "http://127.0.0.1:11434/v1";
+    assert_eq!(expected, normalize_base_url("http://localhost:11434/v1"));
+    assert_eq!(expected, normalize_base_url("http://127.0.0.1:11434/v1/"));
+    assert_eq!(expected, normalize_base_url("http://[::1]:11434/v1"));
+    assert_eq!(expected, normalize_base_url("HTTP://LocalHost:11434/v1"));
+    // A host that merely contains the alias is left alone.
+    assert_eq!(
+        "https://localhost.example.com/v1",
+        normalize_base_url("https://localhost.example.com/v1")
+    );
+}

@@ -145,6 +145,19 @@ async fn run_scan(config: &Config, args: ScanArgs) -> Result<()> {
     let assignments = assign_provider_ids(config, &found);
     for (id, endpoint) in &assignments {
         print_endpoint(id, endpoint);
+        // A built-in provider carries a fixed wire protocol and cannot be
+        // overridden, so a server that disagrees would fail at request time
+        // with nothing pointing at the cause.
+        if let Some(configured) = config.model_providers.get(id)
+            && configured.wire_api != endpoint.wire_api
+        {
+            println!(
+                "    warning: `{id}` is configured for {configured_wire}, but this server \
+answers {detected_wire}. Configure it under another id with `codex fleet add`.",
+                configured_wire = configured.wire_api,
+                detected_wire = endpoint.wire_api,
+            );
+        }
     }
 
     if !args.write {
@@ -313,10 +326,10 @@ session's own endpoint."
 /// overridden anyway.
 fn assign_provider_ids(config: &Config, found: &[Endpoint]) -> Vec<(String, Endpoint)> {
     let built_ins = built_in_model_providers(/*openai_base_url*/ None);
-    let mut by_base_url: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut by_base_url: BTreeMap<String, &str> = BTreeMap::new();
     for (id, provider) in &built_ins {
         if let Some(base_url) = provider.base_url.as_deref() {
-            by_base_url.insert(base_url, id.as_str());
+            by_base_url.insert(normalize_base_url(base_url), id.as_str());
         }
     }
 
@@ -324,12 +337,35 @@ fn assign_provider_ids(config: &Config, found: &[Endpoint]) -> Vec<(String, Endp
         .iter()
         .map(|endpoint| {
             let id = by_base_url
-                .get(endpoint.base_url.as_str())
+                .get(&normalize_base_url(&endpoint.base_url))
                 .map(|id| (*id).to_string())
                 .unwrap_or_else(|| generated_provider_id(config, endpoint));
             (id, endpoint.clone())
         })
         .collect()
+}
+
+/// Normalizes a base URL for comparison.
+///
+/// `localhost`, `127.0.0.1` and `[::1]` name the same endpoint, and which one
+/// appears depends on whether it was typed, scanned, or built in. Comparing
+/// them literally would report an already-configured server as a new one.
+fn normalize_base_url(base_url: &str) -> String {
+    let normalized = base_url.trim_end_matches('/').to_ascii_lowercase();
+    for alias in ["//localhost", "//[::1]"] {
+        let Some(index) = normalized.find(alias) else {
+            continue;
+        };
+        let (prefix, rest) = normalized.split_at(index);
+        let tail = &rest[alias.len()..];
+        // Only a whole host component is an alias: `localhost.example.com` is
+        // an ordinary hostname that happens to start with one.
+        if !tail.is_empty() && !tail.starts_with(':') && !tail.starts_with('/') {
+            continue;
+        }
+        return format!("{prefix}//127.0.0.1{tail}");
+    }
+    normalized
 }
 
 fn generated_provider_id(config: &Config, endpoint: &Endpoint) -> String {
@@ -344,11 +380,14 @@ fn generated_provider_id(config: &Config, endpoint: &Endpoint) -> String {
     // The bare runtime name reads best, so only qualify it when it is taken by
     // something pointing somewhere else.
     let bare = slug.to_string();
-    match config.model_providers.get(&bare) {
-        Some(existing) if existing.base_url.as_deref() != Some(endpoint.base_url.as_str()) => {
-            format!("{slug}-{port}")
-        }
-        _ => bare,
+    let claimed_by_another_endpoint = config.model_providers.get(&bare).is_some_and(|existing| {
+        existing.base_url.as_deref().map(normalize_base_url)
+            != Some(normalize_base_url(&endpoint.base_url))
+    });
+    if claimed_by_another_endpoint {
+        format!("{slug}-{port}")
+    } else {
+        bare
     }
 }
 

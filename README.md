@@ -1,81 +1,131 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+# multi-codex
 
----
+**A coding agent that runs as an org chart across a frontier model in the cloud
+and small models on your own hardware.**
+
+A fork of [OpenAI Codex CLI](https://github.com/openai/codex) that adds three
+things: it can talk to [Nebius Token Factory](https://tokenfactory.nebius.com)
+and to any OpenAI-compatible server on your network, it can put different agents
+on different endpoints, and it can nest them into teams.
+
+The agent you talk to runs on a large model — NVIDIA Nemotron 3 Ultra or Super
+on Nebius. It does not do the work. It hands a domain to a **lead**, which
+breaks that domain into self-contained pieces and spawns **workers** that run
+Nemotron 3 Nano on your own GPU. Workers report to their lead, the lead reviews
+before passing anything up, and you only ever talk to the top.
+
+```
+                    you
+                     │
+             ┌───────┴────────┐        Nemotron 3 Ultra · Nebius Token Factory
+             │  coordinator   │
+             └───────┬────────┘
+          ┌──────────┴──────────┐
+     ┌────┴─────┐         ┌─────┴────┐              Nemotron 3 Super · Nebius
+     │ UI lead  │         │ API lead │
+     └────┬─────┘         └─────┬────┘
+      ┌───┴───┐             ┌───┴───┐
+    ┌─┴─┐   ┌─┴─┐         ┌─┴─┐   ┌─┴─┐        Nemotron 3 Nano · your GPU
+    │ w │   │ w │         │ w │   │ w │
+    └───┘   └───┘         └───┘   └───┘
+```
+
+## Why
+
+Most of what a coding agent does is not hard, there is just a lot of it: reading
+files to answer one question, applying a change that has already been decided,
+running the test suite and reporting what broke, writing the third variation of
+something that exists twice. Sending all of that to a frontier endpoint is what
+makes agent runs slow and expensive.
+
+Splitting it is not new. Doing it *across endpoints*, so the volume work never
+leaves your hardware, is what this fork adds — and once agents can sit on
+different endpoints, nesting them into teams is what keeps the expensive model's
+context free for the decisions only it can make.
+
+It also means the code that stays local, stays local.
 
 ## Quickstart
 
-### Installing and running Codex CLI
-
-Run the following on Mac or Linux to install Codex CLI:
-
 ```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+# Build
+cd codex-rs && cargo build --release -p codex-cli --bin codex
+
+# 1. The cloud model
+export NEBIUS_API_KEY=...
+
+# 2. Find whatever is serving models nearby (Ollama, LM Studio, vLLM, llama.cpp)
+codex fleet scan --write
+
+# 3. Install the lead and worker roles
+codex fleet team --write
+
+# 4. Go
+codex -c model_provider=nebius -c model="nvidia/Nemotron-3-Ultra-550b-a55b"
 ```
 
-Run the following on Windows to install Codex CLI:
+Then ask for something big enough to split:
 
-```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
+> Add dark mode: one lead for the UI, one for the theme plumbing.
+
+See [docs/fleet.md](./docs/fleet.md) for the full setup, including endpoints on
+another machine.
+
+## What this fork adds
+
+**A chat-completions wire protocol.** Codex speaks the OpenAI Responses API.
+Nebius serves it for some models but not all, and several local runtimes —
+llama.cpp, Unsloth Studio, older vLLM builds — do not serve it at all.
+`wire_api = "chat"` is a first-class transport rather than a translating
+sidecar: it rewrites a turn into chat messages on the way out and
+reassembles response items on the way in, keeping tool calls, streamed
+reasoning, and token accounting intact. It inherits the client's existing auth,
+retry, and telemetry.
+
+**Per-agent endpoint routing.** A role may name the provider its agents run on,
+within an allowlist you declare. That allowlist is the trust boundary: a role
+file that could name any endpoint would be a way to redirect model traffic, so
+roles select from what you sanctioned and cannot introduce endpoints of their
+own.
+
+**Hierarchical teams.** `agents.max_depth` decides how many levels may spawn
+further agents. The default of `1` keeps the tree flat, as it was; `2` gives you
+leads that run teams of their own.
+
+**`codex fleet`.** Finds inference endpoints by asking each candidate port what
+it is, works out which wire protocol it speaks, and writes the configuration —
+providers, allowlist, roles, depth — so none of the above has to be assembled by
+hand.
+
+## Configuration
+
+Everything lives in `~/.codex/config.toml`, and `codex fleet` writes it for you:
+
+```toml
+model_provider = "nebius"
+model = "nvidia/Nemotron-3-Ultra-550b-a55b"
+
+[model_providers.vllm]
+base_url = "http://127.0.0.1:8000/v1"
+wire_api = "chat"
+
+[agents]
+# Endpoints a role may route its agents to.
+allowed_model_providers = ["nebius", "vllm"]
+# How many levels may spawn further agents. 2 gives you team leads.
+max_depth = 2
 ```
-
-The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
-
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
-```
-
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
-```
-
-Codex CLI can also be installed via the following package managers:
-
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
-
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
-
-Then simply run `codex` to get started.
-
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
-
-### Using Codex with your ChatGPT plan
-
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
-
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
 
 ## Docs
 
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
+- [Fleets and teams](./docs/fleet.md) — setup, routing, and what to run where
+- [Codex configuration](https://github.com/openai/codex/blob/main/docs/config.md)
+- [Codex documentation](https://developers.openai.com/codex)
 
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+## Upstream
+
+This is a fork of [openai/codex](https://github.com/openai/codex), licensed
+under [Apache-2.0](./LICENSE). Everything the upstream CLI does, this does —
+sandboxing, approvals, MCP servers, skills, the TUI. The additions above sit
+alongside it and are off by default: without a configured fleet, this behaves
+exactly like upstream Codex.
