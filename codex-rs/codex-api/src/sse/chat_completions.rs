@@ -142,6 +142,7 @@ async fn process_chat_sse(
     let mut stream = stream.eventsource();
     let mut state = StreamState::default();
     let mut created_sent = false;
+    let mut saw_frame = false;
 
     loop {
         let event = match timeout(idle_timeout, stream.next()).await {
@@ -165,6 +166,7 @@ async fn process_chat_sse(
             }
         };
 
+        saw_frame = true;
         let data = event.data.trim();
         if data.is_empty() {
             continue;
@@ -222,6 +224,20 @@ async fn process_chat_sse(
                 return;
             }
         }
+    }
+
+    if !saw_frame {
+        // A 200 that carries no event stream is usually a server answering the
+        // request in one JSON body despite `stream: true`. Finalizing here
+        // would look like a model that said nothing at all, so name the cause.
+        let _ = tx_event
+            .send(Err(ApiError::Stream(
+                "the endpoint returned a successful response with no event stream; \
+it may not support streaming chat completions"
+                    .to_string(),
+            )))
+            .await;
+        return;
     }
 
     finalize(state, &tx_event, &tool_bindings).await;

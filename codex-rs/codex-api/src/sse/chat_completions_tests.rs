@@ -313,3 +313,25 @@ async fn a_truncated_stream_still_reports_what_arrived() {
     );
     assert!(matches!(events[4], ResponseEvent::Completed { .. }));
 }
+
+#[tokio::test]
+async fn a_response_without_an_event_stream_is_reported() {
+    // Some OpenAI-compatible servers answer in one JSON body even when asked
+    // to stream. Silence would look like a model that produced nothing.
+    let body = r#"{"id":"chatcmpl-1","choices":[{"message":{"content":"hi"}}]}"#.to_string();
+    let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(8);
+    let stream = ReaderStream::new(std::io::Cursor::new(body))
+        .map_err(|err| TransportError::Network(err.to_string()));
+    tokio::spawn(process_chat_sse(
+        Box::pin(stream),
+        tx,
+        idle_timeout(),
+        HashMap::new(),
+    ));
+
+    let first = rx.recv().await.expect("event");
+    assert!(
+        matches!(&first, Err(ApiError::Stream(message)) if message.contains("no event stream")),
+        "{first:?}"
+    );
+}
