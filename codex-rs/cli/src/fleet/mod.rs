@@ -28,6 +28,7 @@ use toml_edit::Item as TomlItem;
 use toml_edit::value;
 
 mod probe;
+mod team;
 
 use probe::Endpoint;
 use probe::Runtime;
@@ -46,6 +47,8 @@ enum FleetAction {
     Add(AddArgs),
     /// Show the configured endpoints and whether they are answering.
     List,
+    /// Install the lead and worker roles that make a hierarchy an org.
+    Team(team::TeamArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -103,6 +106,7 @@ pub async fn run_main(command: FleetCommand, config_overrides: CliConfigOverride
         FleetAction::Scan(args) => run_scan(&config, args).await,
         FleetAction::Add(args) => run_add(&config, args).await,
         FleetAction::List => run_list(&config).await,
+        FleetAction::Team(args) => team::run_team(&config, args).await,
     }
 }
 

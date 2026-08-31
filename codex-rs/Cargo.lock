@@ -2393,6 +2393,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "codex-agent-roles",
  "codex-api",
  "codex-app-server",
  "codex-app-server-daemon",
